@@ -1,11 +1,26 @@
 #!/usr/bin/python
 
+# on gentoo pillow needs to be installed
+
 import time
 import math
 import random
 from PIL import Image
 from mmap import mmap
 import struct
+
+# see cyclone v device handbook
+# Cyclone V Device Handbook
+# Volume 3: Hard Processor System Technical Reference Manual
+
+# Address Spaces
+FPGASLAVES_OFFSET = 0xC0000000
+#FPGASLAVES_SIZE = # 960 MB
+LWFPGASLAVES_OFFSET = 0xff200000
+#LWFPGASLAVES_SIZE =  #2 MB
+PERIPH_OFFSET =  0xFC000000
+#PERIPH_SIZE =  #64 MB
+
 
 def pixel_list(pic):
   # pixelsWide = 32
@@ -15,58 +30,64 @@ def pixel_list(pic):
   im = im.rotate(180)
   #todo: check size. resize if necessary?
   rgb_im = im.convert('RGB')
-  print 'size of picture:', rgb_im.size
+  # print 'size of picture:', rgb_im.size
   pixels = list(rgb_im.getdata())
   return pixels
 
 
 f = open("/dev/mem", "r+b" )
-mem = mmap(f.fileno(), 0x2000, offset=0xff200000)
+# # mem = mmap(f.fileno(), 0x2000, offset=0xff200000)
+mem = mmap(f.fileno(), 0x2000, offset=LWFPGASLAVES_OFFSET+0x2000)
+#mem=[0]*512*4
+# factor = 0.0
+factor = 0.2
+brighter = True
+shift = 0
+while True:
+    # if brighter:
+    #     factor += 0.1
+    # else:
+    #     factor -= 0.1
 
-# with open("/dev/mem", "r+b" ) as f:
-#   # mem = mmap(f.fileno(), 0x04000000, offset=0xfc000000)
-#   mem = mmap(f.fileno(), 0x2000, offset=0xff200000)
-#   # print hex(len(mem))
-#   # mem = mem[0xff200000+0x2000:0xff200000+0x2000+0x2000]
-#   # print hex(len(mem))
-#   # print mem
+    # if factor > 1:
+    #     brighter = False
+    #     factor = 1
+    # if factor < 0:
+    #     brighter = True
+    #     factor = 0
+    
+    for picture in ['SuperMario_step1.png', 'SuperMario_step2.png','SuperMario_step3.png']:
+        # pixels = pixel_list('./SuperMarioStanding_02.png')
+        pixels = pixel_list(picture)
 
-# '''print all values'''
-# for one in mem:
-  # val = struct.unpack("B", one)[0]
-  # print val
+        # TODO: there should be a easier way to write the data to the memory
+        # check mem.seek(4) 
 
-# mem.seek(0)
-# for position in range(0,len(mem),4):
-  # print position
-  # mem[position:position+4] = struct.pack("<L", 0x00FF00)
+        for pixel_nr,position in enumerate(range(0,512*4,4)):
+          # print pixel_nr, position
+          # mem[position:position+4] = struct.pack("<L", 0x00FF00)
+          # print pixels[pixel_nr]
+          # color = pixels[pixel_nr]
+#          color = [int(pixel*factor) for pixel in pixels[pixel_nr]]
+#          pixel_anim = ((pixel_nr+shift*32)%512)
+#          print pixel_anim
+          color = [int(pixel*factor) for pixel in pixels[((pixel_nr+shift*32)%512)]]
+          # this looks very ugly
+          val = int(color[0] + (color[1]<<8) + (color[2] <<16))
+          # print val
+          mem[position:position+4] = struct.pack("<L", val)
+          # mem[position:position+4] = struct.pack("<L", 0x00FFFFFF)
+        if shift < 15:
+           shift = shift + 1
+        else:
+           shift = 0
+        time.sleep(0.05)
 
-# for position, one in enumerate(mem):
-#   val = struct.pack("B", 255)
-#   # print position
-#   # one = val
-#   mem[position] = val
-#   # mem.write_byte(chr(255))
-#   print position, struct.unpack("<B", val)[0], struct.unpack("<B", mem[position])[0]
+output = open('output.txt', 'w')
+# for item in mem:
+#   output.write("%s,\n" % ord(item))
 
-pixels = pixel_list('./SuperMarioStanding_02.png')
-# mem.seek(0)
-# data = ''
-# for pixel in pixels:
-#     # self.i2c.writeList(pixel[0],list(pixel[1:]))
-#     # mem.seek(4)
-#     data += struct.pack('4B', 0,pixel[2],pixel[1],pixel[0])
-# mam = data
-
-# TODO: there should be a easier way to write the data to the memory
-# check mem.seek(4) 
-
-for pixel_nr,position in enumerate(range(0,512*4,4)):
-  print pixel_nr, position
-  # mem[position:position+4] = struct.pack("<L", 0x00FF00)
-  print pixels[pixel_nr]
-  color = pixels[pixel_nr]
-  # this looks very ugly
-  val = int(color[0] + (color[1]<<8) + (color[2] <<16))
-  print val
-  mem[position:position+4] = struct.pack("<L", val)
+# output.write(",\n".join(mem))
+output.write("constant ROM2 : memory := (\n")
+output.write(",\n".join(map(lambda x: str(ord(x)), mem)))
+output.write("\n);\n")
